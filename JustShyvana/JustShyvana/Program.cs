@@ -6,17 +6,24 @@ using LeagueSharp;
 using LeagueSharp.Common;
 using LeagueSharp.Common.Data;
 using Color = System.Drawing.Color;
-using JustOlaf;
+using JustShyvana;
 
-namespace JustMaokai
+namespace JustShyvana
 {
     internal class Program
     {
-        public const string ChampName = "Maokai";
+        public const string ChampName = "Shyvana";
         public static HpBarIndicator Hpi = new HpBarIndicator();
         public static Menu Config;
         public static Orbwalking.Orbwalker Orbwalker;
         public static Spell Q, W, E, R;
+        private static SpellSlot _smiteSlot = SpellSlot.Unknown;
+        private static Spell _smite;
+        //Credits to Kurisu
+        private static readonly int[] SmitePurple = {3713, 3726, 3725, 3726, 3723};
+        private static readonly int[] SmiteGrey = {3711, 3722, 3721, 3720, 3719};
+        private static readonly int[] SmiteRed = {3715, 3718, 3717, 3716, 3714};
+        private static readonly int[] SmiteBlue = {3706, 3710, 3709, 3708, 3707};
         private static SpellSlot Ignite;
         private static readonly Obj_AI_Hero player = ObjectManager.Player;
 
@@ -31,15 +38,17 @@ namespace JustMaokai
             if (player.ChampionName != ChampName)
                 return;
 
-            Notifications.AddNotification("JustMaokai - [V.1.0.1.0]", 8000);
+            Notifications.AddNotification("JusShyvana - [V.1.0.0.0]", 8000);
 
             //Ability Information - Range - Variables.
-            Q = new Spell(SpellSlot.Q, 600);
-            Q.SetSkillshot(0.50f, 110f, 1200f, false, SkillshotType.SkillshotLine);
-            W = new Spell(SpellSlot.W, 525);
-            E = new Spell(SpellSlot.E, 1100);
-            E.SetSkillshot(1f, 250f, 1500f, false, SkillshotType.SkillshotCircle);
-            R = new Spell(SpellSlot.R, 625);
+            Q = new Spell(SpellSlot.Q, 125);
+            W = new Spell(SpellSlot.W, 350f);
+            E = new Spell(SpellSlot.E, 925f);
+            E.SetSkillshot(0.25f, 60f, 1700, false, SkillshotType.SkillshotLine);
+            R = new Spell(SpellSlot.R, 1000f);
+            R.SetSkillshot(0.25f, 150f, 1500, false, SkillshotType.SkillshotLine);
+
+            SetSmiteSlot();
 
             Config = new Menu(player.ChampionName, player.ChampionName, true);
             Config.AddSubMenu(new Menu("Orbwalking", "Orbwalking"));
@@ -56,8 +65,7 @@ namespace JustMaokai
             Config.SubMenu("Combo").AddItem(new MenuItem("UseW", "Use W").SetValue(true));
             Config.SubMenu("Combo").AddItem(new MenuItem("UseE", "Use E").SetValue(true));
             Config.SubMenu("Combo").AddItem(new MenuItem("UseR", "Use R").SetValue(true));
-            Config.SubMenu("Combo").AddItem(new MenuItem("Rkil", "Cancel Ult If Target Killable").SetValue(true));
-            Config.SubMenu("Combo").AddItem(new MenuItem("Rmana", "Cancel Ult If Mana").SetValue(new Slider(30, 0, 100)));
+            Config.SubMenu("Combo").AddItem(new MenuItem("UseS", "Use Smite (Red/Blue)").SetValue(true));
             Config.SubMenu("Combo").AddItem(new MenuItem("Rene", "Min Enemies for R").SetValue(new Slider(2, 1, 5)));
 
             //Harass
@@ -65,7 +73,8 @@ namespace JustMaokai
             Config.SubMenu("Harass").AddItem(new MenuItem("hQ", "Use Q").SetValue(true));
             Config.SubMenu("Harass").AddItem(new MenuItem("hW", "Use W").SetValue(true));
             Config.SubMenu("Harass").AddItem(new MenuItem("hE", "Use E").SetValue(true));
-            Config.SubMenu("Harass").AddItem(new MenuItem("harassmana", "Mana Percentage").SetValue(new Slider(30, 0, 100)));
+            Config.SubMenu("Harass").AddItem(new MenuItem("AutoHarass", "Auto Harass", true).SetValue(new KeyBind("J".ToCharArray()[0],KeyBindType.Toggle)));
+            Config.SubMenu("Harass").AddItem(new MenuItem("aE", "Use E for Auto Harass").SetValue(true));
 
             //Item
             Config.AddSubMenu(new Menu("Item", "Item"));
@@ -74,7 +83,8 @@ namespace JustMaokai
             Config.SubMenu("Item").AddItem(new MenuItem("eL", "  Enemy HP Percentage").SetValue(new Slider(80, 0, 100)));
             Config.SubMenu("Item").AddItem(new MenuItem("oL", "  Own HP Percentage").SetValue(new Slider(65, 0, 100)));
             Config.SubMenu("Item").AddItem(new MenuItem("UseBilge", "Use Bilgewater Cutlass").SetValue(true));
-            Config.SubMenu("Item").AddItem(new MenuItem("HLe", "  Enemy HP Percentage").SetValue(new Slider(80, 0, 100)));
+            Config.SubMenu("Item")
+                .AddItem(new MenuItem("HLe", "  Enemy HP Percentage").SetValue(new Slider(80, 0, 100)));
             Config.SubMenu("Item").AddItem(new MenuItem("UseIgnite", "Use Ignite").SetValue(true));
 
             //Laneclear
@@ -82,7 +92,6 @@ namespace JustMaokai
             Config.SubMenu("Clear").AddItem(new MenuItem("laneQ", "Use Q").SetValue(true));
             Config.SubMenu("Clear").AddItem(new MenuItem("laneW", "Use W").SetValue(true));
             Config.SubMenu("Clear").AddItem(new MenuItem("laneE", "Use E").SetValue(true));
-            Config.SubMenu("Clear").AddItem(new MenuItem("laneclearmana", "Mana Percentage").SetValue(new Slider(30, 0, 100)));
 
             //Draw
             Config.AddSubMenu(new Menu("Draw", "Draw"));
@@ -94,9 +103,8 @@ namespace JustMaokai
 
             //Misc
             Config.AddSubMenu(new Menu("Misc", "Misc"));
-            Config.SubMenu("Misc").AddItem(new MenuItem("Ksq", "Killsteal with Q").SetValue(false));
-            Config.SubMenu("Misc").AddItem(new MenuItem("KsW", "Killsteal with W").SetValue(false));
-            Config.SubMenu("Misc").AddItem(new MenuItem("tower", "Auto W Under Tower").SetValue(false));
+            Config.SubMenu("Misc").AddItem(new MenuItem("KsQ", "Killsteal with Q").SetValue(false));
+            Config.SubMenu("Misc").AddItem(new MenuItem("KsE", "Killsteal with E").SetValue(false));
             Config.SubMenu("Misc").AddItem(new MenuItem("DrawD", "Damage Indicator").SetValue(true));
             Config.SubMenu("Misc").AddItem(new MenuItem("interrupt", "Interrupt Spells").SetValue(true));
             Config.SubMenu("Misc").AddItem(new MenuItem("antigap", "AntiGapCloser").SetValue(true));
@@ -104,23 +112,46 @@ namespace JustMaokai
             Config.AddToMainMenu();
             Drawing.OnDraw += OnDraw;
             Game.OnUpdate += Game_OnGameUpdate;
+            Game.PrintChat(
+                "<font color=\"#FF003C\">JustShyvana - <font color=\"#FFFFFF\"> Latest Version Successfully Loaded.</font>");
             Drawing.OnEndScene += OnEndScene;
             Interrupter2.OnInterruptableTarget += Interrupter2_OnInterruptableTarget;
             AntiGapcloser.OnEnemyGapcloser += AntiGapcloser_OnEnemyGapcloser;
         }
 
-        static void Interrupter2_OnInterruptableTarget(Obj_AI_Hero sender, Interrupter2.InterruptableTargetEventArgs args)
+        private static void Interrupter2_OnInterruptableTarget(Obj_AI_Hero sender,
+            Interrupter2.InterruptableTargetEventArgs args)
         {
-            if (W.IsReady() && sender.IsValidTarget(W.Range) && Config.Item("interrupt").GetValue<bool>())
-                W.CastOnUnit(sender);
+            if (R.IsReady() && sender.IsValidTarget(R.Range) && Config.Item("interrupt").GetValue<bool>())
+                R.CastIfHitchanceEquals(sender, HitChance.High);
         }
 
-        static void AntiGapcloser_OnEnemyGapcloser(ActiveGapcloser gapcloser)
+        private static void AntiGapcloser_OnEnemyGapcloser(ActiveGapcloser gapcloser)
         {
-            if (Q.IsReady() && gapcloser.Sender.IsValidTarget(Q.Range) && Config.Item("antigap").GetValue<bool>())
-                Q.CastIfHitchanceEquals(gapcloser.Sender, HitChance.High);
+            if (W.IsReady() && gapcloser.Sender.IsValidTarget(Q.Range) && Config.Item("antigap").GetValue<bool>())
+                W.Cast();
         }
 
+        public static string Smitetype()
+        {
+            if (SmiteBlue.Any(id => Items.HasItem(id)))
+            {
+                return "s5_summonersmiteplayerganker";
+            }
+            if (SmiteRed.Any(id => Items.HasItem(id)))
+            {
+                return "s5_summonersmiteduel";
+            }
+            if (SmiteGrey.Any(id => Items.HasItem(id)))
+            {
+                return "s5_summonersmitequick";
+            }
+            if (SmitePurple.Any(id => Items.HasItem(id)))
+            {
+                return "itemsmiteaoe";
+            }
+            return "summonersmite";
+        }
 
 
         private static void OnEndScene(EventArgs args)
@@ -138,36 +169,35 @@ namespace JustMaokai
 
         private static void combo()
         {
-            var target = TargetSelector.GetTarget(W.Range, TargetSelector.DamageType.Magical);
+            var target = TargetSelector.GetTarget(R.Range, TargetSelector.DamageType.Magical);
             if (target == null || !target.IsValidTarget())
                 return;
 
-            var rmana = Config.Item("Rmana").GetValue<Slider>().Value;
             var enemys = Config.Item("Rene").GetValue<Slider>().Value;
-            if (R.IsReady() && Config.Item("UseR").GetValue<bool>() && target.IsValidTarget(R.Range) && player.ManaPercent >= rmana && (Config.Item("Rene").GetValue<Slider>().Value <= enemys))
-                R.Cast();
+            if (R.IsReady() && Config.Item("UseR").GetValue<bool>() && target.IsValidTarget(R.Range))
+                if (!target.HasBuff("JudicatorIntervention") && !target.HasBuff("Undying Rage") &&
+                (Config.Item("Rene").GetValue<Slider>().Value <= enemys))
+                    R.CastIfHitchanceEquals(target, HitChance.High);
+
+            UseSmite(target);
 
             if (W.IsReady() && target.IsValidTarget(W.Range) && Config.Item("UseW").GetValue<bool>())
-                W.CastOnUnit(target);
+                W.Cast();
 
             if (E.IsReady() && target.IsValidTarget(E.Range) && Config.Item("UseE").GetValue<bool>())
                 E.CastIfHitchanceEquals(target, HitChance.High);
 
             if (Q.IsReady() && Config.Item("UseQ").GetValue<bool>() && target.IsValidTarget(Q.Range))
-                Q.CastIfHitchanceEquals(target, HitChance.High);
-
-            var rDmg = player.GetSpellDamage(target, SpellSlot.R);
-            if (Config.Item("Rkill").GetValue<bool>() && target.HealthPercent <= rDmg)
-                R.Cast();
+                Q.Cast();
 
             if (Orbwalker.ActiveMode == Orbwalking.OrbwalkingMode.Combo)
                 items();
         }
 
-        
+
         private static int CalcDamage(Obj_AI_Base target)
         {
-            var aa = player.GetAutoAttackDamage(target, true) * (1 + player.Crit);
+            var aa = player.GetAutoAttackDamage(target, true)*(1 + player.Crit);
             var damage = aa;
             Ignite = player.GetSpellSlot("summonerdot");
 
@@ -200,48 +230,45 @@ namespace JustMaokai
                 damage += E.GetDamage(target);
             }
 
+            if (_smite.IsReady() && Config.Item("UseS").GetValue<KeyBind>().Active) // edamage
+            {
+
+                damage += GetSmiteDmg();
+            }
+
             if (W.IsReady() && Config.Item("UseW").GetValue<KeyBind>().Active) // wdamage
             {
 
                 damage += W.GetDamage(target);
             }
-            return (int)damage;
+            return (int) damage;
         }
 
         private static float IgniteDamage(Obj_AI_Hero target)
         {
             if (Ignite == SpellSlot.Unknown || player.Spellbook.CanUseSpell(Ignite) != SpellState.Ready)
                 return 0f;
-            return (float)player.GetSummonerSpellDamage(target, Damage.SummonerSpell.Ignite);
+            return (float) player.GetSummonerSpellDamage(target, Damage.SummonerSpell.Ignite);
         }
-
-        private static void UnderTower()
-        {
-            var Target = TargetSelector.GetTarget(W.Range + W.Width, TargetSelector.DamageType.Magical);
-
-            if (Utility.UnderTurret(Target, false) && W.IsReady() && Config.Item("UnderTower").GetValue<bool>())
-            {
-                W.Cast(Target);
-            }
-        }
-
 
         private static void Killsteal()
         {
             foreach (Obj_AI_Hero target in
                 ObjectManager.Get<Obj_AI_Hero>()
-                    .Where(hero => hero.IsValidTarget(Q.Range) && !hero.HasBuffOfType(BuffType.Invulnerability) && hero.IsEnemy)
+                    .Where(
+                        hero =>
+                            hero.IsValidTarget(Q.Range) && !hero.HasBuffOfType(BuffType.Invulnerability) && hero.IsEnemy)
                 )
             {
                 var qDmg = player.GetSpellDamage(target, SpellSlot.Q);
                 if (Config.Item("ksQ").GetValue<bool>() && target.IsValidTarget(Q.Range) && target.Health <= qDmg)
                 {
-                    Q.CastIfHitchanceEquals(target, HitChance.High);
+                    Q.Cast();
                 }
-                var wDmg = player.GetSpellDamage(target, SpellSlot.W);
-                if (Config.Item("ksW").GetValue<bool>() && target.IsValidTarget(W.Range) && target.Health <= wDmg)
+                var eDmg = player.GetSpellDamage(target, SpellSlot.E);
+                if (Config.Item("ksE").GetValue<bool>() && target.IsValidTarget(E.Range) && target.Health <= eDmg)
                 {
-                    W.CastOnUnit(target);
+                    E.CastIfHitchanceEquals(target, HitChance.High);
                 }
             }
         }
@@ -258,8 +285,8 @@ namespace JustMaokai
             var cutlass = ItemData.Bilgewater_Cutlass.GetItem();
 
             if (botrk.IsReady() && botrk.IsOwned(player) && botrk.IsInRange(target)
-            && target.HealthPercent <= Config.Item("eL").GetValue<Slider>().Value
-            && Config.Item("UseBOTRK").GetValue<bool>())
+                && target.HealthPercent <= Config.Item("eL").GetValue<Slider>().Value
+                && Config.Item("UseBOTRK").GetValue<bool>())
 
                 botrk.Cast(target);
 
@@ -291,7 +318,7 @@ namespace JustMaokai
             {
                 return;
             }
-
+            
             switch (Orbwalker.ActiveMode)
             {
                 case Orbwalking.OrbwalkingMode.Combo:
@@ -306,61 +333,71 @@ namespace JustMaokai
             }
 
             Killsteal();
-            UnderTower();
+            var autoHarass = Config.Item("AutoHarass", true).GetValue<KeyBind>().Active;
+            if (autoHarass)
+               AutoHarass();
+        }
+
+        private static void AutoHarass()
+        {
+            var target = TargetSelector.GetTarget(E.Range, TargetSelector.DamageType.Magical);
+            if (target == null || !target.IsValidTarget())
+                return;
+            
+            if (E.IsReady() && Config.Item("aE").GetValue<bool>() && target.IsValidTarget(E.Range))
+                E.CastIfHitchanceEquals(target, HitChance.High);
         }
 
         private static void harass()
         {
-            var harassmana = Config.Item("harassmana").GetValue<Slider>().Value;
-            var target = TargetSelector.GetTarget(W.Range, TargetSelector.DamageType.Magical);
+            var target = TargetSelector.GetTarget(E.Range, TargetSelector.DamageType.Magical);
             if (target == null || !target.IsValidTarget())
                 return;
 
-            if (W.IsReady() && Config.Item("hW").GetValue<bool>() && target.IsValidTarget(W.Range) && player.ManaPercent >= harassmana)
-                W.CastOnUnit(target);
+            if (W.IsReady() && Config.Item("hW").GetValue<bool>() && target.IsValidTarget(W.Range))
+               W.Cast();
 
-            if (Q.IsReady() && Config.Item("hQ").GetValue<bool>() && target.IsValidTarget(Q.Range) && player.ManaPercent >= harassmana)
-                Q.CastIfHitchanceEquals(target, HitChance.High);
+            if (Q.IsReady() && Config.Item("hQ").GetValue<bool>() && target.IsValidTarget(Q.Range))
+                Q.Cast();
 
-            if (E.IsReady() && Config.Item("hE").GetValue<bool>() && target.IsValidTarget(E.Range) && player.ManaPercent >= harassmana)
+            if (E.IsReady() && Config.Item("hE").GetValue<bool>() && target.IsValidTarget(E.Range))
                 E.CastIfHitchanceEquals(target, HitChance.High);
         }
 
         private static void Clear()
         {
-            var minionObj = MinionManager.GetMinions(E.Range, MinionTypes.All, MinionTeam.NotAlly, MinionOrderTypes.MaxHealth);
-            var lanemana = Config.Item("laneclearmana").GetValue<Slider>().Value;
-
+            var minionObj = MinionManager.GetMinions(E.Range, MinionTypes.All, MinionTeam.NotAlly,
+                MinionOrderTypes.MaxHealth);
+            
             if (!minionObj.Any())
             {
                 return;
             }
 
             if (Orbwalker.ActiveMode == Orbwalking.OrbwalkingMode.LaneClear && Config.Item("laneE").GetValue<bool>()
-                && player.ManaPercent >= lanemana &&
+                &&
                 (minionObj.Count > 2 || minionObj.Any(i => i.MaxHealth >= 1200)))
             {
-                var pos = E.GetCircularFarmLocation(minionObj);
+                var pos = E.GetLineFarmLocation(minionObj);
                 if (pos.MinionsHit > 0 && E.Cast(pos.Position))
                 {
                     return;
                 }
             }
 
-            if (Orbwalker.ActiveMode == Orbwalking.OrbwalkingMode.LaneClear && Config.Item("laneQ").GetValue<bool>()
-                && player.ManaPercent >= lanemana)
+            if (Orbwalker.ActiveMode == Orbwalking.OrbwalkingMode.LaneClear && Config.Item("laneQ").GetValue<bool>())
+                
             {
                 var pos = Q.GetLineFarmLocation(minionObj.Where(i => Q.IsInRange(i)).ToList());
-                if (pos.MinionsHit > 0 && Q.Cast(pos.Position))
+                if (pos.MinionsHit > 0 && Q.Cast())
                 {
                     return;
                 }
             }
 
             if (Orbwalker.ActiveMode == Orbwalking.OrbwalkingMode.LaneClear
-               && Config.Item("laneW").GetValue<bool>()
-               && player.ManaPercent >= lanemana)
-            {
+                && Config.Item("laneW").GetValue<bool>())
+                {
                 var obj = minionObj.Where(i => W.IsInRange(i)).FirstOrDefault(i => i.MaxHealth >= 1200);
                 if (obj == null)
                 {
@@ -368,7 +405,7 @@ namespace JustMaokai
                 }
                 if (obj != null)
                 {
-                    W.CastOnUnit(obj);
+                    W.Cast();
                 }
             }
         }
@@ -378,9 +415,7 @@ namespace JustMaokai
         {
             if (Config.Item("Draw_Disabled").GetValue<bool>())
                 return;
-
-            var playerPos = Drawing.WorldToScreen(ObjectManager.Player.Position);
-
+            
             if (Config.Item("Qdraw").GetValue<bool>())
                 Render.Circle.DrawCircle(player.Position, Q.Range, System.Drawing.Color.White, 3);
             if (Config.Item("Wdraw").GetValue<bool>())
@@ -391,5 +426,38 @@ namespace JustMaokai
                 Render.Circle.DrawCircle(player.Position, R.Range, System.Drawing.Color.White, 3);
         }
 
+        //Credits to metaphorce
+        public static void UseSmite(Obj_AI_Hero target)
+        {
+            var usesmite = Config.Item("UseS").GetValue<bool>();
+            var itemscheck = SmiteBlue.Any(i => Items.HasItem(i)) || SmiteRed.Any(i => Items.HasItem(i));
+            if (itemscheck && usesmite &&
+                ObjectManager.Player.Spellbook.CanUseSpell(_smiteSlot) == SpellState.Ready &&
+                target.Distance(player.Position) < _smite.Range)
+            {
+                ObjectManager.Player.Spellbook.CastSpell(_smiteSlot, target);
+            }
+        }
+
+        private static void SetSmiteSlot()
+        {
+            foreach (
+                var spell in
+                    ObjectManager.Player.Spellbook.Spells.Where(
+                        spell => String.Equals(spell.Name, Smitetype(), StringComparison.CurrentCultureIgnoreCase)))
+            {
+                _smiteSlot = spell.Slot;
+                _smite = new Spell(_smiteSlot, 700);
+                return;
+            }
+        }
+
+        private static int GetSmiteDmg()
+        {
+            int level = player.Level;
+            int index = player.Level/5;
+            float[] dmgs = {370 + 20*level, 330 + 30*level, 240 + 40*level, 100 + 50*level};
+            return (int) dmgs[index];
+        }
     }
 }
